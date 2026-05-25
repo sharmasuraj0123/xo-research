@@ -1,0 +1,81 @@
+---
+title: Interactive content showcase
+description: How to embed charts, raw HTML, and external pages inside a research brief.
+---
+
+This page demonstrates every interactive component available in `xo-research`. Use it as the reference when writing briefs that need more than markdown.
+
+All components are registered globally in `src/components/mdx.tsx`, so MDX files can use them without `import` statements.
+
+## Stat block
+
+For the load-bearing numbers at the top of a brief.
+
+<StatBlock
+  stats={[
+    { value: "7 mo", label: "METR doubling period", source: "METR, Mar 2025" },
+    { value: "90.2%", label: "Multi-agent uplift on research", source: "Anthropic, Jun 2025" },
+    { value: "15x", label: "Multi-agent token cost vs chat", source: "Anthropic, Jun 2025" },
+    { value: "25k", label: "Claude Code tool response cap", source: "Anthropic, Sep 2025" },
+  ]}
+/>
+
+## Inline SVG chart
+
+Pure server-rendered SVG, no JavaScript shipped to the client. Good for small fixed visualizations you author in TypeScript.
+
+<MetrDoublingChart />
+
+## Embedded local HTML
+
+For richer interactive viz (Chart.js, D3, Plotly), drop a `.html` file next to your `.mdx` file in the research area, then embed it with `<HtmlEmbed>`. The HTML is read at render time and inlined into the page.
+
+<HtmlEmbed
+  src="content/docs/agent-harness/charts/agent-failure-modes.html"
+  caption="Four agent failure modes and the harness response. Source: Anthropic, Effective harnesses for long-running agents."
+/>
+
+## Inline HTML string
+
+For very short HTML you want to keep inside the MDX file itself.
+
+<HtmlInline
+  html={`<div style="display:flex;gap:8px;align-items:center;font-family:ui-sans-serif,system-ui;">
+    <span style="display:inline-block;width:10px;height:10px;border-radius:9999px;background:#83d63a"></span>
+    <span style="font-weight:600">Inline HTML works</span>
+    <span style="opacity:0.7">when the brief needs a small custom widget.</span>
+  </div>`}
+/>
+
+## External iframe embed
+
+For embedding third-party pages, archived sources, or live dashboards. Renders in a sandboxed iframe with `allow-scripts allow-same-origin` by default.
+
+```mdx
+<IframeEmbed
+  url="https://metr.org/time-horizons/"
+  height={600}
+  caption="METR's live time-horizon page."
+/>
+```
+
+(The iframe itself is not rendered on this page because we don't want to make a network request on every build, but the component is available and tested.)
+
+## Component reference
+
+| Component | Purpose | Where it runs |
+|---|---|---|
+| `<HtmlEmbed src="..." />` | Inline the contents of a local `.html` file | Server (build-time read) |
+| `<HtmlInline html="..." />` | Inline a short HTML string | Server |
+| `<IframeEmbed url="..." />` | Sandboxed iframe of an external page | Server |
+| `<MetrDoublingChart />` | The METR 7-month doubling, as SVG | Server |
+| `<StatBlock stats=[...] />` | Compact "load-bearing numbers" grid | Server |
+| `<Card />` / `<Cards>` | Section cards (used on landings) | Server |
+| `<BrandIcon name="..." />` | Brand icon from `/public/icons/` | Server |
+
+## When to use which
+
+- **Adding a single dataset to a brief?** Use `<MetrDoublingChart>` as a template; write a small server SVG component in `src/components/data-viz.tsx`.
+- **Interactive viz (hover tooltips, animations, drag)?** Write the `.html` file (Chart.js, D3, Plotly), put it next to the brief, embed with `<HtmlEmbed>`.
+- **Page is too big to inline?** Use `<IframeEmbed url="https://..." />` and host the HTML separately.
+- **Standalone HTML report from another tool (Claude, a scraper, a dashboard generator)?** Drop it in the section's `charts/` folder, embed with `<HtmlEmbed>`.

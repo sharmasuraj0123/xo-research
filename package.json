@@ -1,0 +1,53 @@
+{
+  "name": "xo-research",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "start": "next start",
+    "types:check": "fumadocs-mdx && next typegen && tsc --noEmit",
+    "postinstall": "fumadocs-mdx",
+    "lint": "biome check .",
+    "format": "biome format --write ."
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.71",
+    "@ai-sdk/react": "^3.0.170",
+    "@openrouter/ai-sdk-provider": "^2.8.0",
+    "@radix-ui/react-presence": "^1.1.5",
+    "ai": "^6.0.168",
+    "class-variance-authority": "^0.7.1",
+    "flexsearch": "^0.8.212",
+    "fumadocs-core": "16.8.1",
+    "fumadocs-mdx": "14.3.1",
+    "fumadocs-ui": "16.8.1",
+    "hast-util-to-jsx-runtime": "^2.3.6",
+    "next": "16.2.4",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "remark": "^15.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-rehype": "^11.1.2",
+    "tailwind-merge": "^3.5.0",
+    "unist-util-visit": "^5.1.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.12",
+    "@iconify-json/line-md": "^1.2.16",
+    "@iconify-json/lineicons": "^1.2.6",
+    "@iconify-json/mingcute": "^1.2.7",
+    "@iconify-json/ph": "^1.2.2",
+    "@iconify/tailwind4": "^1.2.3",
+    "@tailwindcss/postcss": "^4.2.2",
+    "@types/hast": "^3.0.4",
+    "@types/mdx": "^2.0.13",
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "postcss": "^8.5.10",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^6.0.3"
+  }
+}

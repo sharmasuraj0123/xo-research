@@ -1,0 +1,57 @@
+---
+title: XO Research
+description: Research notes, briefs, and data behind XO.
+---
+
+import { Cards, Card } from "@/components/card";
+
+{/* Hero */}
+
+<div className="not-prose mb-16 border-b bg-gradient-to-t from-fd-primary/[0.06] via-transparent to-transparent pb-20 pt-20 text-center">
+	<div className="mb-4 inline-flex items-center gap-2 rounded-full border border-fd-border/70 bg-fd-muted/60 px-3 py-1 text-xs font-medium text-fd-muted-foreground">
+		<span className="inline-block size-1.5 rounded-full bg-fd-primary" />
+		Internal research, public-leaning
+	</div>
+	<h1 className="mb-4 text-5xl font-bold tracking-tight text-fd-foreground sm:text-6xl">
+		The research behind <span className="text-fd-primary">XO</span>
+	</h1>
+	<div className="mx-auto mb-10 max-w-lg text-lg text-fd-muted-foreground">
+		Briefs, syntheses, and primary-source notes. The work that informs how we design agent workspaces, what we build, and what we don't.
+	</div>
+	<div className="flex flex-wrap items-center justify-center gap-3">
+		<a
+			href="/agent-harness"
+			className="flex items-center gap-2 rounded-lg bg-fd-primary px-5 py-2.5 text-sm font-semibold text-fd-primary-foreground transition-opacity hover:opacity-90"
+		>
+			Agent harness research
+		</a>
+		<a
+			href="https://xo.builders"
+			className="inline-flex items-center gap-2 rounded-lg border border-fd-border bg-fd-background px-5 py-2.5 text-sm font-semibold text-fd-foreground transition-colors hover:bg-fd-muted"
+		>
+			xo.builders
+		</a>
+	</div>
+</div>
+
+{/* Sections */}
+
+<div className="not-prose mb-14">
+	<h2 className="mb-6 text-2xl font-semibold tracking-tight text-fd-foreground">Research areas</h2>
+	<Cards>
+		<Card
+			title="Agent harness research"
+			description="How effective agent harnesses are designed for long-running, multi-context-window work. Synthesis of Anthropic, Cognition, and METR primary sources."
+			href="/agent-harness"
+		/>
+	</Cards>
+</div>
+
+{/* Conventions */}
+
+<div className="not-prose mb-14">
+	<h2 className="mb-3 text-2xl font-semibold tracking-tight text-fd-foreground">Conventions</h2>
+	<p className="text-fd-muted-foreground">
+		Every brief lists its primary sources at the bottom. Quotes are kept verbatim. Numeric claims are checked against the source before publication. Writing follows the workspace style guide: brief by default, no em or en dashes, citations as inline markdown links.
+	</p>
+</div>

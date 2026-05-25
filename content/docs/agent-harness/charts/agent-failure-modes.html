@@ -1,0 +1,85 @@
+<!--
+  Self-contained HTML viz: the 4 agent failure modes from Anthropic's harness post.
+  Placed alongside .mdx files in the same research area; pulled into briefs via
+  <HtmlEmbed src="content/docs/agent-harness/charts/agent-failure-modes.html" />.
+-->
+<style>
+  .afm-wrap {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    padding: 16px;
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      sans-serif;
+  }
+  .afm-card {
+    border-radius: 8px;
+    border: 1px solid rgba(127, 127, 127, 0.2);
+    padding: 14px 16px;
+    background: rgba(131, 214, 58, 0.03);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .afm-num {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #83d63a;
+  }
+  .afm-prob {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.3;
+    color: inherit;
+  }
+  .afm-fix {
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: inherit;
+    opacity: 0.75;
+  }
+  .afm-fix strong {
+    color: inherit;
+    opacity: 1;
+    font-weight: 600;
+  }
+</style>
+<div class="afm-wrap">
+  <div class="afm-card">
+    <div class="afm-num">Failure 1</div>
+    <div class="afm-prob">Claude declares victory on the entire project too early.</div>
+    <div class="afm-fix">
+      <strong>Init:</strong> structured JSON feature list with every requirement.<br />
+      <strong>Worker:</strong> read list first; pick one feature.
+    </div>
+  </div>
+  <div class="afm-card">
+    <div class="afm-num">Failure 2</div>
+    <div class="afm-prob">Claude leaves the environment with bugs or undocumented progress.</div>
+    <div class="afm-fix">
+      <strong>Init:</strong> initial git repo + progress notes file.<br />
+      <strong>Worker:</strong> read progress + git log first; commit and update progress on exit.
+    </div>
+  </div>
+  <div class="afm-card">
+    <div class="afm-num">Failure 3</div>
+    <div class="afm-prob">Claude marks features as done prematurely.</div>
+    <div class="afm-fix">
+      <strong>Init:</strong> feature list with explicit pass criteria.<br />
+      <strong>Worker:</strong> self-verify end-to-end before flipping <code>passes</code> to true.
+    </div>
+  </div>
+  <div class="afm-card">
+    <div class="afm-num">Failure 4</div>
+    <div class="afm-prob">Claude wastes tokens figuring out how to run the app.</div>
+    <div class="afm-fix">
+      <strong>Init:</strong> write a runnable <code>init.sh</code>.<br />
+      <strong>Worker:</strong> read <code>init.sh</code> first.
+    </div>
+  </div>
+</div>

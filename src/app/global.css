@@ -1,0 +1,41 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+@plugin "@iconify/tailwind4";
+@source not "../../.claude/**";
+
+/*
+ * Brand: #83d63a — hsl(92, 66%, 53%)
+ *
+ * Color theory note: #83d63a has relative luminance ~0.53 (very bright),
+ * so it fails contrast on white backgrounds. Light mode uses a darkened
+ * variant (hsl 92, 60%, 28%) which achieves ~7:1 on white. Dark mode
+ * uses the full brand color which achieves ~10:1 on dark backgrounds.
+ */
+@theme {
+  /* Light mode: darkened brand for text/button contrast on white */
+  --color-fd-primary: hsl(92, 60%, 28%);
+  --color-fd-primary-foreground: hsl(0, 0%, 98%);
+  --color-fd-accent: hsl(92, 45%, 93%);
+  --color-fd-accent-foreground: hsl(92, 50%, 20%);
+  --color-fd-border: hsla(92, 35%, 40%, 22%);
+  --color-fd-ring: hsl(92, 60%, 28%);
+  --color-fd-muted: hsl(92, 18%, 96%);
+  --color-fd-muted-foreground: hsl(92, 8%, 44%);
+}
+
+.dark {
+  /* Dark mode: full brand color — high contrast on dark backgrounds */
+  --color-fd-primary: hsl(92, 66%, 53%);
+  --color-fd-primary-foreground: hsl(92, 8%, 7%);
+  --color-fd-accent: hsla(92, 40%, 30%, 28%);
+  --color-fd-accent-foreground: hsl(92, 10%, 90%);
+  --color-fd-border: hsla(92, 35%, 55%, 12%);
+  --color-fd-ring: hsl(92, 66%, 53%);
+  --color-fd-muted: hsl(92, 8%, 13%);
+  --color-fd-muted-foreground: hsla(92, 10%, 70%, 80%);
+}
+
+html {
+  scrollbar-gutter: stable;
+}

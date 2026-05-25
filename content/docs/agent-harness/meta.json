@@ -1,0 +1,5 @@
+{
+  "title": "Agent harness",
+  "icon": "Cpu",
+  "pages": ["index", "long-running-agents", "interactive-showcase"]
+}

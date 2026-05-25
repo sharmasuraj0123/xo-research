@@ -1,0 +1,166 @@
+---
+title: Effective harnesses for long-running agents
+description: Synthesis of Anthropic, Cognition, and METR research on multi-context agents, with implications for XO.
+---
+
+Compiled May 2026.
+
+## Why this matters now
+
+METR's task-completion time-horizon benchmark, the cleanest public measure of how long an agent can run before failing, has doubled every seven months for six years. Claude 3.7 Sonnet sits near a 50% time horizon of about one hour; 2025 frontier models live in the 1-to-4-hour regime, and the trend extrapolates to month-long autonomous projects within two to four years. ([METR, "Measuring AI Ability to Complete Long Tasks"](https://metr.org/blog/2025-03-19-measuring-ai-ability-to-complete-long-tasks/))
+
+That curve is mostly about *harness*, not the model. The Anthropic team is blunt: even Opus 4.5 on the Claude Agent SDK with compaction will fail to build a production-quality web app from a high-level prompt unless you wrap it in scaffolding that bridges context windows. ([Anthropic, "Effective harnesses for long-running agents"](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)) For XO, where the product *is* the agent harness, this is exactly the design surface that matters.
+
+This brief synthesizes Anthropic's November 2025 harness post, their September 2025 context-engineering post, the multi-agent research write-up, Cognition's "Don't Build Multi-Agents," the writing-tools-for-agents piece, and the METR data. Then it translates each principle into concrete implications for `xo-cowork-api`, `xo-coworker`, and OpenClaw.
+
+## The core problem in one sentence
+
+Long-running agents work in discrete sessions, and each new session begins with no memory of what came before. Anthropic's analogy: a software project staffed by engineers working in shifts, where each new engineer arrives with no memory of the prior shift. ([Anthropic, harness post](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents))
+
+Two failure modes dominate when this gap is unbridged:
+
+1. The agent tries to one-shot the work, runs out of context mid-implementation, and leaves the codebase half-broken and undocumented for the next session.
+2. A later session looks around, sees that progress has been made, and declares the job done.
+
+Everything that follows is a defense against these two failures.
+
+## Six principles that hold across every source
+
+### 1. The harness, not the prompt, is the unit of design
+
+Anthropic's framing has shifted decisively from prompt engineering to *context engineering*: "the set of strategies for curating and maintaining the optimal set of tokens (information) during LLM inference, including all the other information that may land there outside of the prompts." The guiding rule: find the smallest set of high-signal tokens that maximizes likelihood of the desired outcome. ([Anthropic, "Effective context engineering for AI agents"](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents))
+
+The reason this matters: research on "context rot" shows that as token count grows, retrieval accuracy degrades across every frontier model. Context is a finite "attention budget," and every additional token spends some of it. Compaction, externalized memory, just-in-time retrieval, and sub-agent isolation are all techniques for staying within that budget.
+
+### 2. Initializer prompt + worker prompt is the load-bearing pattern
+
+Anthropic's claude.ai-clone experiment used exactly two prompts (sharing the same system prompt, tools, and harness; the "two agents" label is just shorthand for "two different opening instructions"):
+
+- **Initializer agent**, run once on a fresh workspace, builds the scaffolding: an `init.sh` that starts the dev server, a `claude-progress.txt` log, an initial git commit, and a `feature_list.json` enumerating every requirement the project must satisfy.
+- **Coding agent**, run every subsequent session, does three things in a fixed order: get bearings (`pwd`, read progress file, read git log, read feature list, run `init.sh`, run a basic end-to-end sanity check), pick one feature, leave a clean commit and progress update.
+
+The trick is not the model. The trick is that the first session's only job is to create the artifacts every later session needs to orient. Without that bootstrap, each later session burns hundreds of tokens reconstructing context and still ends up guessing.
+
+### 3. State lives on disk, not in the context window
+
+The harness depends on four externalized state artifacts, each chosen for specific reasons:
+
+- **`feature_list.json`**: comprehensive, machine-readable, with `passes: false` toggles. Anthropic explicitly switched from Markdown to JSON because the model is far less likely to silently rewrite a JSON file than a Markdown one. The file is paired with strong language: "It is unacceptable to remove or edit tests because this could lead to missing or buggy functionality."
+- **`claude-progress.txt`**: human-readable session log, the equivalent of an engineer's "what I did today" handoff note.
+- **git history**: not just version control. Anthropic specifically calls out that git commits give the agent the ability to revert bad changes and recover to a working state, which is something compaction-only systems lose.
+- **`init.sh`**: not a Makefile, not docs, an actual runnable script. "Start by reading `init.sh`" replaces an agent reasoning through dev-server setup from scratch.
+
+The general principle, from the context-engineering post: prefer "just in time" context. Agents should hold lightweight identifiers (file paths, queries, links) and dynamically pull in content via tools, the way Claude Code uses `glob`, `grep`, `head`, and `tail` over large data without ever loading whole files. Folder hierarchies, naming conventions, and timestamps all carry signal that an agent can exploit without reading the contents.
+
+### 4. Compaction, notes, and sub-agents are three complementary levers
+
+The September 2025 context-engineering post enumerates three techniques for tasks that exceed a single context window, and explicitly says which suits which workload:
+
+- **Compaction**: summarize a near-full context, re-seed a new one. Tune for recall first, then prune for precision. The lightest form is just clearing tool results from history (now a feature on the Claude Developer Platform). Best for "tasks requiring extensive back-and-forth."
+- **Structured note-taking** (a.k.a. agentic memory): the agent writes notes to disk (Claude Code's to-do list, a `NOTES.md`, the new file-based memory tool in Sonnet 4.5). Anthropic's Claude-plays-Pokémon demo maintains coherent multi-hour training plans purely through this mechanism, across thousands of game steps. Best for "iterative development with clear milestones."
+- **Sub-agent architectures**: specialized workers with clean context windows, each returning a 1,000-2,000-token summary of work that may have consumed tens of thousands of tokens internally. Best for "complex research and analysis where parallel exploration pays dividends."
+
+These are levers, not exclusive choices. Real systems combine them.
+
+### 5. Single-threaded versus multi-agent depends on whether sub-tasks share implicit context
+
+This is where Anthropic and Cognition publicly disagreed in mid-2025, and the disagreement clarifies when to use what.
+
+Cognition's "Don't Build Multi-Agents" argues that parallel sub-agents are inherently fragile because actions carry implicit decisions that conflict when sub-agents can't see each other's work. Their canonical example: a Flappy Bird clone where sub-agent 1 builds a Mario-style background while sub-agent 2 builds a bird with mismatched art direction, and neither knows about the other. Their two principles: share full agent traces (not just messages); treat every action as a carrier of implicit decisions that must be consistent. Cognition's prescribed default is single-threaded linear agents, with a fine-tuned compression model for very long horizons. ([Cognition, "Don't Build Multi-Agents"](https://cognition.ai/blog/dont-build-multi-agents))
+
+Anthropic, a day later, published their multi-agent research system: an orchestrator-worker pattern that beat single-agent Opus 4 by 90.2% on internal research evals, with the lead agent decomposing a query and parallel sub-agents exploring breadth-first. ([Anthropic, "How we built our multi-agent research system"](https://www.anthropic.com/engineering/multi-agent-research-system))
+
+The two are reconcilable. Anthropic's own post is explicit:
+
+> Most coding tasks involve fewer truly parallelizable tasks than research, and LLM agents are not yet great at coordinating and delegating to other agents in real time. We've found that multi-agent systems excel at valuable tasks that involve heavy parallelization, information that exceeds single context windows, and interfacing with numerous complex tools.
+
+Practical rule: multi-agent for breadth-first work where sub-tasks are genuinely independent and the value justifies 15× the token spend of a chat. Single-threaded for coding and other workflows where every action constrains every other action. Even Claude Code, an Anthropic product, only spawns sub-agents for read-only investigative tasks, never for parallel writes, precisely to avoid the Cognition failure mode.
+
+### 6. Tools are contracts with a non-deterministic actor
+
+The tool-writing post reframes tools as a different category from APIs: a contract between deterministic systems and a non-deterministic agent. Wrapping API endpoints one-to-one is the most common mistake. ([Anthropic, "Writing effective tools for agents"](https://www.anthropic.com/engineering/writing-tools-for-agents))
+
+The concrete guidance that translates directly to harness design:
+
+- **Consolidate workflows into single tools.** `schedule_event` beats `list_users` + `list_events` + `create_event`. `search_logs` beats `read_logs`. `get_customer_context` beats three separate lookups. Each consolidation moves work off the context window and into the tool call.
+- **Namespace deliberately.** `asana_projects_search`, `asana_users_search`. The Anthropic team found prefix vs. suffix namespacing had non-trivial eval effects, so choose by measurement.
+- **Return semantic identifiers, not UUIDs.** Resolving `7f2a-...-...` to a name or a 0-indexed handle "significantly improves Claude's precision in retrieval tasks by reducing hallucinations." Expose a `response_format` enum (`concise` vs `detailed`) when downstream calls need raw IDs.
+- **Cap response tokens.** Claude Code defaults tool responses to 25,000 tokens with pagination/filtering knobs. Steer truncated responses with helpful messages, not raw tracebacks.
+- **Write actionable errors.** Treat error responses as prompt-engineering surfaces, not log dumps.
+- **Use evaluation to refine descriptions.** The team saw double-digit performance gains from tightening descriptions alone; one tool-testing agent improved tool ergonomics enough to cut task completion time 40%.
+
+## Production engineering matters as much as the model
+
+The Anthropic research-system post adds an operational layer that's easy to underestimate. ([Multi-agent research system](https://www.anthropic.com/engineering/multi-agent-research-system))
+
+- **Agents are stateful, and errors compound.** Restarts are expensive. Build resumable execution with checkpoints; let the model adapt when a tool fails rather than crashing.
+- **Debugging is non-deterministic.** Same prompt, different trace. Production tracing of decision patterns (not message contents, for privacy) is what makes failures diagnosable.
+- **Deployments need rainbow patterns.** Agents are mid-execution when you ship code. Run old and new versions in parallel and drain.
+- **Synchronous coordination bottlenecks at scale.** Async sub-agent spawning is the next frontier, with the obvious tradeoffs in state consistency.
+- **Evals start small.** Twenty real queries are enough to see effects when changes move success rates 30% to 80%. Don't wait for the "complete" eval suite.
+
+## Implications for XO
+
+XO's architecture already maps cleanly onto these principles. The harness layer is `xo-cowork-api`, the persistent substrate is the workspace itself, and the runtimes (Claude Code, Codex, OpenClaw) are pluggable. The implications below are concrete enough to act on.
+
+### The workspace *is* the durable state layer. Make that explicit.
+
+`xo-cowork-api` already has the subsystems (`files`, `fts`, `workspace_memory`, `channels`, `secrets`) that constitute the equivalent of `claude-progress.txt` plus git plus `feature_list.json` plus `init.sh`. The shift is in how they're used: today these look like generic workspace primitives; the harness pattern says they should be load-bearing parts of a *bootstrap-then-iterate* lifecycle. Every Coworker template (Eliza, Gaia, n8n, custom characters) should ship with a documented set of state files it expects the initializer to create, and a documented protocol for what each subsequent session reads first.
+
+### Add an explicit `session_role` to the cowork-api session model
+
+Today, sessions route by `agent_type`. The Anthropic pattern argues for a second axis: whether this session's job is to *bootstrap* the workspace or to *continue* work. The simplest implementation is a `session_role` of `initialize` or `continue`, switched automatically by checking for the presence of the workspace's bootstrap artifacts. The system prompt sent to the runtime differs accordingly. This is a small change in the broker layer with outsized payoff: it directly maps to the failure mode where a fresh agent looks around, sees code, and declares victory.
+
+### Treat `workspace_memory` plus FTS as the just-in-time retrieval substrate, not RAG
+
+The context-engineering post is explicit that pre-inference embedding retrieval is on its way out for capable agents, in favor of lightweight identifiers plus on-demand fetch. Audit `xo-cowork-api` for places where it currently injects large chunks of memory or file content into the context up front. The right pattern is what Claude Code does with `CLAUDE.md` plus `grep`/`glob`: a thin always-on context, with tools that pull specific content just in time. The FTS index is the right substrate; the question is whether the harness uses it that way or stuffs results into context too eagerly.
+
+### Compaction belongs in cowork-api, not in the runtime
+
+Claude Code and Codex each have their own in-session compaction. But XO's value-add is *cross-session* and *cross-runtime* continuity, which only the cowork-api layer can deliver. When a session ends (whether by user action, context limit, or runtime swap), cowork-api should run a compaction step that distills the session into `workspace_memory` and ensures the next session can bootstrap from it. This is also the natural seam for runtime portability: a session compacted by cowork-api can be resumed by a different runtime.
+
+### Use the orchestrator-vs-single-threaded debate to constrain template design
+
+Coding templates should default to single-threaded with read-only investigative sub-agents (the Claude Code pattern). Research, browsing, and "scan a corpus" templates should use the Anthropic orchestrator-worker pattern with `channels` as the natural primitive for handoff. This is not a one-size-fits-all decision and should be encoded per-template, not globally. The Cognition write-up gives the rationale to push back on customers who want parallel sub-agents for coding workloads.
+
+### Audit the skills model against the tool-design principles
+
+The skills system (`agent_type` to `/skill-name` for Claude, `$skill-name` for Codex) is exactly the layer where Anthropic's tool-writing guidance applies. Specifically: each skill should consolidate a workflow rather than wrap an API; skill names should namespace clearly; skill outputs should default to semantic names with an opt-in `detailed` mode for downstream tool chaining; outputs should be token-capped with sensible pagination defaults; errors should be actionable. A skill audit using a tool-testing agent (the Anthropic team's 40% improvement story) is the highest-leverage one-week project I can identify in this material.
+
+### Host portability requires durable state contracts
+
+XO's pitch is that the same Coworker workspace runs on a laptop, in Coder, in Docker, in Vercel Sandbox. The harness depends on a stable filesystem and a git repository surviving across sessions. For ephemeral hosts like Vercel Sandbox, this requires an explicit state-snapshot mechanism (the swarm-api S3 layer is a natural home) and a documented restore protocol that runs before the worker agent starts. Without this, the harness silently degrades to single-context-window behavior on those hosts and customers won't know why their long-running agents underperform on one substrate vs another.
+
+### Add agent-decision observability to the existing usage telemetry
+
+`xo-cowork-api` tracks `openclaw_usage` for billing. The Anthropic reliability section makes the case for a separate stream: agent decision patterns and interaction structures (which tools called, what order, what depths), without message contents, for debugging. This is what makes it possible to diagnose "my agent broke after the model upgrade" and to safely run rainbow deployments. The right time to add this is before you have a customer running an eight-hour workflow that fails opaquely.
+
+### Per-template `health.sh` generalizes `init.sh`
+
+The "run a basic end-to-end test before starting a feature" pattern is the bearings-check that prevents an agent from compounding bugs. For coding Coworker workspaces, the natural translation is `init.sh` plus a Puppeteer-style sanity check. For non-coding templates (a customer-support agent, an n8n-workflow workspace, a research assistant), each needs its own per-template sanity protocol: "does the inbox connector work? Does the Linear API respond? Is the knowledge base reachable?" Ship this as a `health.sh` convention per template, called automatically at session start.
+
+## Open questions worth tracking
+
+- **Whether single general-purpose coding agents beat specialized ones across a long horizon.** Anthropic's harness post flags this as their largest open question. A testing-specialist agent, a code-cleanup agent, a code-review agent may each beat a generalist on their slice. XO's `channels` primitive is well-positioned to experiment here.
+- **Whether async multi-agent coordination becomes viable.** The Anthropic team flags this as the next frontier. When it lands, the multi-agent vs single-threaded debate shifts.
+- **Whether memory tools and fine-tuned compression models converge.** Cognition is investing in fine-tuned compression; Anthropic is investing in file-based memory tools. They may be complements rather than substitutes.
+- **Whether the seven-month doubling on METR continues.** Two more doublings put us at ~16-hour autonomous tasks; four more put us at week-long. XO's positioning as workspaces (containers plus state plus memory) becomes more valuable, not less, as horizons grow.
+
+## Sources
+
+Primary sources, ordered by load-bearing weight for this brief:
+
+- [Anthropic, "Effective harnesses for long-running agents" (Nov 26, 2025)](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)
+- [Anthropic, "Effective context engineering for AI agents" (Sep 29, 2025)](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
+- [Anthropic, "How we built our multi-agent research system" (Jun 13, 2025)](https://www.anthropic.com/engineering/multi-agent-research-system)
+- [Anthropic, "Writing effective tools for agents, with agents" (Sep 11, 2025)](https://www.anthropic.com/engineering/writing-tools-for-agents)
+- [Cognition, "Don't Build Multi-Agents" by Walden Yan (Jun 12, 2025)](https://cognition.ai/blog/dont-build-multi-agents)
+- [METR, "Measuring AI Ability to Complete Long Tasks" (Mar 19, 2025)](https://metr.org/blog/2025-03-19-measuring-ai-ability-to-complete-long-tasks/)
+
+Supporting references:
+
+- [Anthropic Claude Agent SDK quickstart for long-running coding agents](https://github.com/anthropics/claude-quickstarts/tree/main/autonomous-coding)
+- [Anthropic, Claude 4 prompting guide, multi-context-window workflows](https://docs.claude.com/en/docs/build-with-claude/prompt-engineering/claude-4-best-practices#multi-context-window-workflows)
+- [Chroma research on context rot](https://research.trychroma.com/context-rot)
+- [SWE-agent paper on agent-computer interfaces](https://arxiv.org/pdf/2405.15793)
+- [OpenHands ACI repository](https://github.com/All-Hands-AI/openhands-aci)
