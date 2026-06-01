@@ -1,0 +1,35 @@
+---
+title: What this is
+description: Operating one-pager for building the XO research lab swarm.
+---
+
+## Purpose
+
+We are building an XO research lab where small CLI agents can be triggered quickly to move research forward in parallel, with clear folder ownership and low overhead.
+
+## Swarm model
+
+The lab uses two agent types:
+
+- **Observed**: execution agents that work inside one assigned folder and produce concrete outputs.
+- **Observers**: review agents that inspect observed outputs, track quality and drift, and produce short corrective guidance.
+
+## How it will work
+
+1. Define a narrow scope per agent, one folder only.
+2. Trigger observed agents for generation and updates.
+3. Trigger observers for review and gap detection.
+4. Merge outcomes into the research book with concise changelogs.
+
+## Design constraints
+
+- Agents stay lightweight and CLI-based.
+- No agent crosses folder boundaries.
+- Every run should be quick to start and quick to inspect.
+- Logs must be plain and easy to audit.
+
+## Immediate build direction
+
+- Keep the dispatcher simple.
+- Keep prompts small and role-specific.
+- Keep ownership explicit so parallel runs do not collide.
