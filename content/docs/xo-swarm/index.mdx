@@ -1,0 +1,41 @@
+---
+title: XO Swarm
+description: Plan for a lightweight research swarm with clear roles, scope, and execution loops.
+---
+
+import { Cards, Card } from "@/components/card";
+
+## What this section is
+
+This section defines how XO Research runs a lightweight swarm of agents that can be triggered quickly and safely.
+
+## Plan
+
+The swarm runs with two role types:
+
+- **Observed agents**: produce output inside one folder scope.
+- **Observer agents**: review outputs, detect drift, and propose focused corrections.
+
+The system favors fast loops:
+
+1. Trigger observed agents on scoped tasks.
+2. Run observer pass on new outputs.
+3. Publish accepted outputs to docs.
+4. Repeat with small iterations.
+
+## Operating principles
+
+- One folder per agent scope.
+- Small prompts and short runs.
+- Plain logs and traceable changelogs.
+- No cross-folder edits without explicit handoff.
+
+## Topics
+
+<Cards>
+	<Card
+		title="Automatic triggers"
+		description="How the swarm auto-triggers when new information is added."
+		href="/xo-swarm/automatic-triggers"
+	/>
+</Cards>

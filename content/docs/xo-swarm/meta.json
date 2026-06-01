@@ -1,0 +1,5 @@
+{
+  "title": "XO Swarm",
+  "icon": "Workflow",
+  "pages": ["index", "automatic-triggers"]
+}

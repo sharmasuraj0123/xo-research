@@ -1,0 +1,63 @@
+---
+title: Automatic triggers
+description: How XO Swarm starts agent runs automatically when new information is added.
+---
+
+## Trigger goal
+
+When new information appears, the swarm should start the smallest useful run automatically.
+
+## Trigger sources
+
+New information events can come from:
+
+- new markdown or mdx files in tracked folders
+- updated files in active research sections
+- appended notes in observed output folders
+- external sync events that write into local docs folders
+
+## Trigger pipeline
+
+1. **Detect**
+   - watch configured folders for file create or modify events
+2. **Classify**
+   - map event to target section and task type
+3. **Dispatch**
+   - start the matching observed agent with a minimal task prompt
+4. **Review**
+   - run observer agent after observed output is written
+5. **Publish**
+   - if checks pass, keep output and log changelog entry
+
+## Routing example
+
+- Change in `content/docs/observations/`:
+  - dispatch observed agent for that folder
+  - then observer agent validates structure and drift
+
+- Change in `content/docs/agent-harness/`:
+  - dispatch observed agent for synthesis update
+  - then observer agent checks citation shape and consistency
+
+## Implementation shape
+
+Use a small watcher process plus the existing swarm dispatcher:
+
+- watcher: detects file events and sends jobs
+- dispatcher: `swarm/xo-swarm.sh`
+- runner: executes scoped agent runs with logs
+
+## Safety rules
+
+- Ignore temp files and lock files.
+- Debounce rapid writes into one run window.
+- Enforce folder-only scope contract at dispatch time.
+- Abort duplicate runs on same folder if one is active.
+
+## Minimal first rollout
+
+1. Add folder watcher with debounce.
+2. Add event-to-agent routing table.
+3. Trigger observed then observer in sequence.
+4. Save run summary in `swarm/logs`.
+5. Review run quality weekly and tune prompts.
