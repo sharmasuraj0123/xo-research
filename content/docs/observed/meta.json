@@ -1,5 +1,5 @@
 {
   "title": "Observed",
   "icon": "Monitor",
-  "pages": ["index"]
+  "pages": ["index", "xo-swarm-frontend", "agent-harness"]
 }
