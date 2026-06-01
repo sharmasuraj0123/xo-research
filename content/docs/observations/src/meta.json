@@ -1,5 +1,0 @@
-{
-  "title": "src",
-  "icon": "Blocks",
-  "pages": ["index", "app", "components", "lib"]
-}
