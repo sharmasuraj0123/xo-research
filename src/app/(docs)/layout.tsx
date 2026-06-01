@@ -16,6 +16,7 @@ export default function Layout({ children }: LayoutProps<"/">) {
       sidebar={{
         enabled: true,
         prefetch: true,
+        collapsible: false,
         banner: <VersionSwitcher />,
       }}
       tree={source.getPageTree()}
