@@ -1,0 +1,12 @@
+{
+  "title": "xo-swarm frontend",
+  "icon": "LayoutTemplate",
+  "pages": [
+    "index",
+    "routing-and-shell",
+    "universe-canvas",
+    "deployments-and-templates",
+    "integrations-and-data",
+    "components-and-state"
+  ]
+}

@@ -1,0 +1,157 @@
+---
+title: XO overview
+description: High level technical spec of XO from repository structure and observed system contracts.
+---
+
+## Scope and intent
+
+XO is an agent infrastructure stack with two layers that operate together:
+
+- **Coworker layer**: the single workspace unit where agents run.
+- **Swarm layer**: the fleet control plane that provisions and manages many workspaces.
+
+This page is a high level tech spec based on current repository structure and integration points.
+
+## Layered architecture
+
+### 1) Workspace unit (XO Coworker)
+
+Primary repos:
+
+- `xo-coworker`: desktop chat surface (Tauri + React ecosystem).
+- `xo-cowork-api`: in-workspace FastAPI control plane.
+
+Core responsibilities:
+
+- Session lifecycle for agent conversations.
+- Filesystem and workspace file operations.
+- Full text search and memory surfaces.
+- Secret handling and tool wiring inside workspace boundary.
+- Runtime brokerage to OpenClaw, Claude Code CLI, and Codex CLI.
+
+### 2) Fleet platform (XO Swarm)
+
+Primary repos:
+
+- `xo-swarm`: platform UI (Next.js).
+- `xo-swarm-api`: platform FastAPI control plane.
+
+Core responsibilities:
+
+- User, org, and project identity.
+- Workspace provisioning and status management.
+- Sharing, billing, and integration configuration.
+- MCP configuration and connected tool orchestration.
+- Template driven workspace launch (Eliza, Gaia, n8n, custom).
+
+## Control plane boundaries
+
+### Workspace control plane boundary
+
+`xo-cowork-api` is authoritative for actions inside one workspace:
+
+- chat/session routing
+- file, memory, and secret APIs
+- runtime selection and adapter logic
+
+### Platform control plane boundary
+
+`xo-swarm-api` is authoritative for global platform state:
+
+- user and tenant scoped metadata
+- project registry and sharing records
+- OAuth backed integration state
+- MCP server configuration catalogs
+
+## Auth and identity model
+
+Observed contract:
+
+- Clerk is the identity provider across surfaces.
+- Browser initiated auth in cowork context uses a poll token flow.
+- `xo-cowork-api` mints or exchanges tokens for `xo-swarm-api` calls.
+- Workspace actions stay user scoped even when compute is remote.
+
+## Runtime contract
+
+Frontend sends `agent_type`. Backend adapters normalize to runtime specific skill formats:
+
+- Claude path: `/skill-name`
+- Codex path: `$skill-name`
+
+Result: one product level agent intent model, many runtime implementations.
+
+## Data and state model
+
+### Workspace scoped state
+
+- active sessions and conversation mappings
+- local files and indexes
+- workspace memory and channels
+- tool execution traces
+
+### Platform scoped state
+
+- projects, deployments, and templates
+- tenant integrations and OAuth tokens
+- usage, billing, and ownership metadata
+- shared MCP config records
+
+Persistence technologies referenced across repos include Postgres, S3 style object storage, and vector storage via Qdrant in platform contexts where retrieval is needed.
+
+## Integration model
+
+MCP is a first class integration surface in the platform layer:
+
+- static and dynamic MCP server definitions
+- per project or per agent tool exposure
+- connectors for services such as Linear, GitHub, Slack, and custom tools
+
+This keeps external system access policy at platform level while preserving workspace execution autonomy.
+
+## Deployment and portability
+
+Design intent from repository contracts:
+
+- Coworker workspace image should run consistently across hosts.
+- Host adapters can include local laptop runtime, Coder, Docker, and sandbox providers.
+- Swarm layer remains provider aware but not provider locked.
+
+## API surface expectations
+
+### Platform UI (`xo-swarm`)
+
+- App Router pages for launchpad, projects, pricing, and account/billing flows.
+- Server side routes and actions for provisioning and integrations.
+- Client state for deployment progress, logs, and workspace controls.
+
+### Workspace API (`xo-cowork-api`)
+
+- agent/chat endpoints
+- file and search endpoints
+- session and secret endpoints
+- workspace memory endpoints
+
+## Operational assumptions
+
+- READMEs can lag and should not override code structure.
+- Frontend and backend repos are paired per layer and usually evolve together.
+- External API calls should default to server side mediation, especially for secret scoped integrations.
+
+## Risks and verification checklist
+
+Areas to validate before deep implementation changes:
+
+- exact token exchange protocol between cowork and swarm APIs
+- runtime adapter behavior and fallback strategy per provider
+- which provisioning adapters are production ready today
+- boundary between workspace local storage and platform replicated state
+
+## Summary
+
+XO is best modeled as a portable workspace runtime plus a fleet orchestrator:
+
+- Coworker is the execution unit.
+- Swarm is the orchestration and governance layer.
+
+The technical center of gravity is not one app. It is the contract between these two control planes.

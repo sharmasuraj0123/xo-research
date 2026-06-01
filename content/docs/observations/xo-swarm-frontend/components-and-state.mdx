@@ -1,0 +1,113 @@
+---
+title: Components and client state
+description: The component inventory, the shadcn/ui design system, and all twelve Zustand stores with who reads and writes each.
+---
+
+About 168 `.tsx` files live under `components/`. They fall into a small number of groups:
+the dual-sidebar nav, project / stats UI, sharing and billing, the universe feature
+components, the chat UI (covered in [Integrations](/observations/xo-swarm-frontend/integrations-and-data)),
+the Eliza form wizard (covered in [Deployments](/observations/xo-swarm-frontend/deployments-and-templates)),
+and the shadcn/ui primitive library.
+
+## The dual-sidebar system
+
+The headline pattern: one `components/app-sidebar.tsx` renders on both rails via a
+`side: "left" | "right"` prop, so an edit applies to both and the two rails carry two
+halves of one idea. `collapsible="icon"`.
+
+- **Header**: logo (`ThemeImage`, light/dark), clickable to collapse (does not navigate).
+- **Content groups**:
+  1. Add button: `AddDataButton` (left) or `AddEnergyButton` (right) from `xo-add-buttons.tsx`.
+  2. Live XO (left) / Past XO (right): `nav-xo-particles.tsx`.
+  3. Agents, labelled "X": `agents-tab-pill.tsx` switch + `nav-energy-agents.tsx`.
+  4. My Projects: `nav-projects.tsx`.
+  5. Shared Projects and Resources: present but hidden via `{false && ...}`.
+- **Footer**: `sidebar-mode-toggle.tsx` (cycles light/dark/system) and the user dropdown
+  (`billing-sheet.tsx`, sign out).
+
+`components/project-sidebar.tsx` is a thinner right rail that just toggles the canvas
+`files` pane; the two-`AppSidebar` arrangement in `conditional-layout.tsx` is the primary
+one.
+
+### Nav components
+
+| Component | Role |
+| --------- | ---- |
+| `nav-projects.tsx` | Owned projects (skeleton, `GlobeLock` icon, copy-id, delete with multi-step cleanup). Expands the **current** project into a `ProjectTree`: Footprint (files) on the left, Timeline (commits) on the right, both toggling `canvas-split-store` flags |
+| `nav-energy-agents.tsx` | Active / past Energy sessions plus data worktrees. Polls every 5s. Click opens the energy or worktree panel and the right canvas pane. The left instance publishes the active count into `presence-store` |
+| `nav-xo-particles.tsx` | Unified live / past particle list (Energy + xo.py worktrees), polls every 5s, pulse vs hollow mark |
+| `nav-shared-projects.tsx` | Shared-with-me list (currently hidden) |
+| `agents-tab-pill.tsx` | A switch toggling the active/past slice per side (`agents-tab-store`); left defaults active, right defaults past |
+| `dynamic-breadcrumb.tsx` | Centered `Universe {projectName}` label whose opacity fades with universe age (`universe-age-store`) |
+
+## Project, stats, sharing, billing
+
+| Component | Role |
+| --------- | ---- |
+| `project-stats.tsx` | `ProjectSize` (polls `getProjectSize`, 30s) and `ProjectLifespan` (polls `getTimeHistory`, 30s; units x minutes, infinity glyph) |
+| `ShareProjectButton.tsx` | Gates the share UI to the owner, then opens the dialog |
+| `ShareProjectDialog.tsx` | List vs confirmation modes; debounced (300ms) exact-email search; grant / revoke via server actions |
+| `AccessInformationSheet.tsx` | Deployment credentials (masked token, Docker commands) + a Logs tab |
+| `billing-sheet.tsx` | Current subscription + payment methods; hidden when `DISABLE_BILLING` |
+| `pricing-table.tsx` | Plan cards (the auth shim renders the Clerk `PricingTable` as null) |
+| `user-info.tsx`, `WelcomeHeader.tsx` | User display and the landing greeting |
+
+## Universe feature components
+
+| Component | Role |
+| --------- | ---- |
+| `xo-add-buttons.tsx` | `AddDataButton` (Terra: orb + gravity-ring icon) and `AddEnergyButton` (Nova: bursting-star icon) |
+| `energy-forms.tsx` | `AddEnergyDialog` (purpose -> `startEnergySession`), repurpose / follow-up forms (baseRef = prior branch), `AddDataDialog` |
+| `energy-plus-menu.tsx`, `energy-session-view.tsx` | Add menu and the live session detail panel (countdown, captured log, impact) |
+| `time-recorder-button.tsx` | Start / Stop the server recorder; sets the shutter speed (`time-unit-store`); polls status every 15s |
+| `worktree-history-view.tsx` | Git history for a selected worktree branch (Time overlay) |
+| `folder-app-view.tsx` | Split-pane iframe for a folder's dev server, with `space-loader` while compiling |
+| `presence-waves.tsx` | Ambient `.xo-presence` overlay shown while any X session is active |
+| `space-loader.tsx` | Themed deep-space spinner (halo, counter-rotating rings, orbiting stars) |
+| `project-sidebar.tsx`, `DeleteConfirmationDialog.tsx`, `sidebar-mode-toggle.tsx`, `mode-toggle.tsx`, `ThemeImage.tsx` | Right rail, destructive confirm, theme controls, theme-swapped image |
+
+## The design system
+
+shadcn/ui in the `new-york` style (`components.json`: RSC true, CSS variables true, base
+color neutral, Lucide icons). About 50 primitives live in `components/ui/` covering
+dialogs / overlays (`dialog`, `alert-dialog`, `sheet`, `drawer`, `dropdown-menu`,
+`context-menu`, `popover`, `hover-card`), forms (`button`, `input`, `input-otp`, `textarea`,
+`label`, `form`, `field`, `checkbox`, `radio-group`, `switch`, `toggle`, `select`, `slider`,
+`file-upload`), navigation (`breadcrumb`, `menubar`, `navigation-menu`, `pagination`, `tabs`,
+`sidebar`), display (`badge`, `card`, `table`, `chart`, `carousel`), layout (`alert`,
+`aspect-ratio`, `separator`, `scroll-area`, `resizable`, `skeleton`, `empty`, `kbd`,
+`progress`), and `sonner`, `spinner`, `item`, `calendar`.
+
+`lib/utils.ts` exports the standard `cn()` (`twMerge(clsx(...))`). Theming is Tailwind v4
+oklch tokens with a `.dark` class toggled by next-themes (default dark). The brand accent
+is XO lime `#83d63a` (active marks, energy particles); the canvas uses a blue-white palette.
+
+## Zustand stores (`lib/`)
+
+Twelve small stores hold all client UI state. Server mutations go through `app/actions/*`;
+data is kept fresh by interval polling (5 to 30s).
+
+| Store | State | Written by | Read by |
+| ----- | ----- | ---------- | ------- |
+| `agents-tab-store` | `bySide.{left,right}: "active" \| "past"` | `agents-tab-pill` | `nav-energy-agents` |
+| `canvas-split-store` | `open: Pane[]` (max 2), `live`/`time`/`files` | toolbar, sidebar trees | `LocalProjectView`, sidebars |
+| `chat-store` | messages, input, detectedContext, loading, error | chat UI | chat UI |
+| `energy-form-store` | `mode: "repurpose" \| "followup" \| null` | session views | energy forms |
+| `energy-panel-store` | `{projectId, sessionId, purpose, mode}` | `nav-energy-agents` | session panel |
+| `folder-app-store` | `{projectId, name, url}` | folder app launches | `folder-app-view` |
+| `presence-store` | `activeCount` | `nav-energy-agents` (left) | `presence-waves`, canvas |
+| `projects-store` | `projects`, `sharedProjects`, loading, error | nav, pages | `nav-projects`, breadcrumb |
+| `store` (FormStore) | `currentStep` (0-6), `formData` | Eliza wizard | Eliza wizard |
+| `time-unit-store` | `minutes` (shutter speed) | `time-recorder-button` | `ProjectLifespan`, breadcrumb |
+| `universe-age-store` | `units` (commit count) | `ProjectLifespan` | `dynamic-breadcrumb` |
+| `worktree-panel-store` | `{projectId, branch, label}` | `nav-energy-agents` | `worktree-history-view` |
+
+## Architecture in one paragraph
+
+A single `ConditionalLayout` mounts a mirrored dual-sidebar (same component, `side` prop,
+mutually exclusive open state) around a content area that is either the chat editor or the
+universe canvas. The canvas can split into at most two of three panes (live / time / files),
+a constraint enforced by `canvas-split-store` and shared between the toolbar and the sidebar
+trees. Client state is a dozen focused Zustand stores; all data mutations are server actions
+or `app/api/*` routes, kept fresh by polling and one SSE stream. The visual language is
+shadcn/ui `new-york` over Tailwind v4, dark-first, with XO lime as the single accent.

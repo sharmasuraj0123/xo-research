@@ -1,0 +1,132 @@
+---
+title: Deployments and templates
+description: The Coder deployment pipeline, the Eliza character builder, and the Gaia / n8n / GitHub template flows.
+---
+
+This is the original "eliza-agent-builder" half of the app: build a character or pick a
+template, then deploy it onto a Coder workspace through an external backend. The frontend
+never talks to Coder or the deploy backend directly from the browser; everything goes
+through `app/api/*` server routes.
+
+## Coder access
+
+`lib/coder-api.ts` (`CoderAPI` class) wraps the Coder REST API: `login`, `getWorkspace`,
+`startWorkspace`, `stopWorkspace`, `getTemplate`, `createUser`, with a private `request`
+that forwards the `Coder-Session-Token` and strips the `/api/v2` prefix.
+
+`lib/coder-service.ts` holds the server-side service functions: `createCoderUser` (sanitizes
+the username, tolerates 409 conflicts), `getAdminSessionToken` (uses `CODER_ADMIN_TOKEN`
+or admin email/password), `createCoderWorkspace`, `getUserWorkspaceByName`,
+`getAllWorkspacesByUser`, `deleteCoderWorkspace`, `updateWorkspaceTTL`, `getSessionToken`.
+
+Two routes front Coder:
+
+- `app/api/coder/[...path]/route.ts` is a transparent proxy: `/api/coder/*` maps to
+  `CODER_URL/api/v2/*`, forwarding the session token across all verbs (handles 204 and
+  non-JSON bodies).
+- `app/api/coder/auth/login/route.ts` (POST) logs a user into Coder. If a `projectId` is
+  passed it verifies access and, for shared projects, uses the **owner's** stored Coder
+  credentials. Returns a `session_token`.
+
+`hooks/use-coder.ts` is the client side: it authenticates on mount via the login route,
+caches the `CoderAPI`, fetches the workspace from the URL's project id, and wraps calls in
+`makeAuthenticatedRequest` which auto-reauthenticates on a 401.
+
+## Deployment lifecycle routes
+
+All require Clerk server auth in platform mode and proxy to a backend at
+`BACKEND_BASE_URL`.
+
+| Route | Method | Calls (backend) | Purpose |
+| ----- | ------ | --------------- | ------- |
+| `create-deployment` | POST | `/harbor-registry-config` | Create a generic workspace deployment (instance / volume / storage / port) |
+| `create-github-deployment` | POST | `/github-main-flow` | Deploy from a GitHub repo + branch + token |
+| `create-n8n-template` | POST | `/deploy-n8n` | Deploy an n8n workflow instance (appends `Gi` to storage) |
+| `create-gaia-template` | POST | `/deploy-gaia` | Deploy a Gaia (Phi-3-mini) instance; tolerates non-JSON responses |
+| `deploy-to-xo` | POST | `/deploy-to-xo` | Transition a created deployment to deployed |
+| `get-deployments` | GET | `/get-deployment-details-by-user-id` | List a user's deployments, normalized |
+| `delete-deployment` | DELETE | `/delete-xo-app` | Remove a deployment |
+| `update-port` | PUT | `/update-target-port` | Change the target port (validates 1 to 65535) |
+| `logs` | GET | `/get-xo-app-logs` | Fetch / poll deployment logs |
+
+A `Deployment` is `{ id, name, projectID, instanceSize, status, port, publicURL, createdAt,
+token, robotInfoName, robotInfoSecret, type }` with `type ∈ {default, n8n, gaia, vibe}`.
+`status` defaults to `"unknown"` when the backend omits it.
+
+`hooks/useDeploymentActions.ts` tracks per-deployment loading in a `Set` and exposes
+`handleDeploy` (deploy-to-xo), `handleUpdatePort`, `handleDelete`, each with a toast and a
+`refreshDeployments` callback.
+
+## The Eliza character builder
+
+This is the most involved client flow. The wizard state lives in `lib/store.ts` (Zustand:
+`currentStep` 0 to 6, `formData`), validated by `lib/form-schema.ts` (Zod schemas per step).
+
+`components/FormLayout.tsx` drives seven steps: Basic Info -> Character Details -> Style ->
+Examples -> Adjectives -> Knowledge Base -> JSON Preview. `FormProgress.tsx` shows the bar,
+`ActionButtons.tsx` handles previous / skip / next / finish (and "Generate with AI" on step
+0, "Start Over" on the last step). The step forms live in `components/form-steps/*`:
+
+- `BasicInfoForm` (name, modelProvider, clients[], voiceModel)
+- `CharacterDetailsForm` (bio[], lore[], topics[])
+- `StyleForm` (styleAll[], styleChat[], stylePost[])
+- `ExamplesForm` (messageExamples[][], postExamples[])
+- `AdjectivesForm` (adjectives[])
+- `KnowledgeBaseForm` (knowledgeBase[{topic, details}])
+
+`components/GenerateWithAI.tsx` posts a free-text prompt to `app/api/generate-character` and
+flattens the response back into `formData`. `components/JsonPreview.tsx` assembles the
+formData into an Eliza character JSON (`name, modelProvider, clients, settings.secrets,
+bio, lore, topics, style, examples, adjectives, knowledge`), offers a download, and opens
+the deploy dialog.
+
+### Deploying the character
+
+`components/DeployDialog.tsx` collects deploy-time secrets (agent name defaulting to a uuid,
+api key, Telegram bot token, Twitter username/password/email) and builds a `FormData`:
+`app-directory`, `character-name`, `container-name`, the character JSON as a file blob, and
+the client credentials.
+
+`app/api/deploy-eliza-agent/route.ts` (POST, FormData) parses the character's `clients[]`
+and `modelProvider`, injects the matching secrets into `character.settings.secrets`
+(`OPENAI_API_KEY`, `GAIANET_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TWITTER_*`, sets
+`TWITTER_DRY_RUN=false` for Twitter clients), then forwards to
+`ELIZA_BACKEND_BASE_URL/dockerfile-setup`. On success `components/DeploymentSuccessDialog.tsx`
+shows the deployment id, optional access token, and ready-to-run Docker login / build / push
+commands (Prism-highlighted, copyable), then redirects to `/`.
+
+## Deployment management UI
+
+- `components/DeploymentTable.tsx`: columns Name, Port, Status, Public URL, Created,
+  Actions; copy-token, delete confirm, per-row dropdown, skeleton + empty states. Status
+  badge colors come from `lib/deployment-utils.ts` `getStatusConfig`.
+- `components/ActionDropdownMenu.tsx`: actions gated by `type`. `vibe` shows Details only;
+  `n8n` and `gaia` hide Deploy and Update Port; `default` shows everything. It closes the
+  dropdown (100ms) before opening a dialog to avoid stacking.
+- `components/UpdatePortDialog.tsx` / `UpdatePortPopover.tsx`: change the port.
+- `components/AccessInformationSheet.tsx`: a sheet with an Access Info tab (masked token,
+  Docker commands) and a Logs tab (`/api/logs?deployment-id=`, rendered in a searchable
+  log viewer).
+- `components/DeleteConfirmationDialog.tsx`: the destructive-action confirm used by the
+  table.
+
+## What is template-specific
+
+| Template | UI | Backend call | Notes |
+| -------- | -- | ------------ | ----- |
+| Eliza | 7-step builder + DeployDialog | `dockerfile-setup` | Only path with character secrets, clients, voice |
+| n8n | single form | `deploy-n8n` | No Deploy / Update Port actions afterward |
+| Gaia | single form | `deploy-gaia` | Phi-3-mini; tolerant of non-JSON responses |
+| GitHub | single form | `github-main-flow` | repo + branch + token, type `default` |
+
+## End to end (Eliza)
+
+```
+/templates/eliza
+  -> FormLayout 7 steps (Zustand store + Zod)
+  -> JsonPreview assembles Eliza character JSON
+  -> DeployDialog collects secrets, builds FormData
+  -> POST /api/deploy-eliza-agent (injects secrets) -> ELIZA_BACKEND/dockerfile-setup
+  -> DeploymentSuccessDialog (id, token, docker commands)
+  -> later: DeploymentTable + useDeploymentActions for deploy-to-xo / port / delete / logs
+```

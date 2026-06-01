@@ -1,0 +1,145 @@
+---
+title: Integrations and the data layer
+description: Chat contexts and streaming, S3 file storage, Linear, billing, WhatsApp, knowledge / memories, and the Drizzle schema.
+---
+
+Every external integration is fronted by an `app/api/*` server route or a server action.
+The browser never holds an external API key, never calls OpenAI / Linear / Stripe / AWS /
+GitHub / Slack directly, and downloads via presigned URLs. This matches the workspace rule
+that external calls stay server-side.
+
+## Chat: contexts and streaming
+
+The chat editor (non-local projects) routes a single input to one of many backends based on
+a detected "context".
+
+- `lib/chat-types.ts`: a `ChatContext` union of 20+ values (`xo`, `claude-code`, `click-up`,
+  `github`, `slack`, `openai`, `perplexity`, `devin`, `stripe`, `salesforce`, `crypto`, ...),
+  plus `Message`, a `CONTEXT_CONFIG` (color / icon / label per context), and
+  `agentCategories` grouping them (XO, Productivity, Code, CMS).
+- `lib/chat-store.ts` (Zustand `useChatStore`): `messages`, `isLoading`, `currentInput`,
+  `detectedContext`, `error`. `setCurrentInput` parses a leading `@context` mention.
+  `sendMessage` dispatches streaming or non-streaming; `loadChatHistory` GETs from the DB.
+- `lib/chat-utils.ts`: `parseMessageContext`, `sendChatMessage` (routes per context),
+  `sendChatMessageStreaming` (parses SSE `data:` lines, buffers tokens), `processApiResponse`
+  (normalizes rich vs simple replies), `isStreamingContext` (true for `xo`, `perplexity`).
+
+Routes under `app/api/chat/`:
+
+| Route | Method | Backend | Notes |
+| ----- | ------ | ------- | ----- |
+| `message-xo` | POST | `AGENT_BACKEND_BASE_URL/ask_question_streaming` | SSE stream; forwards a Clerk JWT bearer token |
+| `message-claude-code` | POST | a Coder workspace (cowork-api) | Builds the base URL from `CLAUDE_CODE_WORKSPACE_DOMAIN` + the user's Coder session token from the DB; SSE |
+| `message-files` | POST | `N8N_URL/chat-with-files` | Default for many new chats |
+| `message-click-up`, `message-github`, `message-slack`, `message-devin` | POST | respective third parties | Rich responses (`{message, url, id, ...}`) |
+| `[projectId]/list-chat` | GET | DB (Drizzle) | Loads chat history |
+| `[projectId]/project-files` | GET | DB | Lists project file metadata |
+
+The AI SDK (`ai`, `@ai-sdk/react`) provides the streaming primitives; `OPENAI_API_KEY` is
+used by the backend, not the frontend. Streaming flows browser -> `/api/chat/message-xo`
+(auth check) -> agent backend (bearer JWT) -> SSE tokens -> store updates -> message bubble.
+
+### Chat UI components
+
+`components/chat/` holds `ChatInput`, `MessageList` / `MessageBubble`, `ContextSwitcher` /
+`ContextCards`, `ChatHistoryLoader`, `Welcome`, `ChatError`, plus a `tabs/` subfolder
+(Code, Docs, Memories, Sources, Tasks) and a `SourcesTab/` data table. Integration icons
+live in `components/icons/` (Claude, OpenAI, Perplexity, Devin, GitHub, Slack, Telegram,
+WhatsApp, Stripe, Salesforce, and more).
+
+## S3 file storage
+
+Server routes under `app/api/s3/`:
+
+| Route | Method | Returns |
+| ----- | ------ | ------- |
+| `upload` | POST (FormData: file, projectId, subPath) | `{key, url, size, originalName}`; max 100MB, MIME whitelist |
+| `list` | GET (projectId, prefix, maxKeys, continuationToken) | paginated `{files, hasMore, nextContinuationToken}` |
+| `delete` | DELETE/POST (filePath or fileKeys[] or whole project) | `{deleted, errors}`; 3-attempt retry |
+| `presigned-url` | GET (projectId, fileName) | a 1-hour presigned download URL |
+
+Library layers: `lib/s3-service.ts` (`S3Service` over AWS SDK v3), `lib/s3-database.ts`
+(`S3DatabaseService` + `s3DbHelpers` verifying project ownership before any op),
+`lib/s3-client.ts` (singleton client, error parsing). Keys are
+`{projectId}/{subPath?}/{fileName}`. `hooks/use-s3-files.ts` manages the client-side list,
+pagination, and delete with toasts. `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` are
+server-only.
+
+## Knowledge and memories
+
+| Route | Method | Backend |
+| ----- | ------ | ------- |
+| `knowledge/set-by-url` | POST (project_name, url) | `AGENT_BACKEND_BASE_URL/add-url-to-knowledgebase` |
+| `memories` | GET (projectId) | `AGENT_BACKEND_BASE_URL/get-knowledgebase-chunks` |
+| `memories` | DELETE (projectId, chunkId) | `AGENT_BACKEND_BASE_URL/delete-knowledgebase-chunk` |
+
+## Linear
+
+The HTTP route `app/api/linear` is a disabled stub; the real work is in
+`app/actions/linear.ts` using `LinearClient` from `@linear/sdk`: `createLinearTeam`,
+`createLinearProject`, `getLinearIssues` (enriched with user data), `deleteLinearProject`.
+`LINEAR_API_KEY` is server-only; OAuth tokens for agents live in the `linearAgentsTokens`
+table.
+
+## Billing (Stripe via a backend)
+
+Routes under `app/api/billing/` proxy to `BILLING_BASE_URL` with a Clerk JWT:
+`create-subscription` (reads trial flags from Clerk `privateMetadata`, returns a checkout
+URL or a started trial), `subscription` (GET/POST), `payment-methods/*` (list / add /
+delete / set-default), `subscription-plans` (GET). `components/billing-sheet.tsx` renders
+the current plan, status, period, and payment methods; it hides when `DISABLE_BILLING` is
+set. Stripe setup-intent flows open in a new window and return via the
+`/payment-method/{success,failure}` callback pages.
+
+## WhatsApp
+
+`@whiskeysockets/baileys` (server-external in `next.config.ts`) backs `app/api/whatsapp/qr`,
+which returns a login QR code. Baileys cannot be bundled, hence the `serverExternalPackages`
+entry.
+
+## Other routes
+
+- `app/api/generate-character` builds an Eliza character from a prompt (feeds the builder).
+- `app/api/webhook` handles incoming webhooks, validating with `CLERK_WEBHOOK_SECRET`.
+- `lib/clerk-api.ts` `getClerkAPIKey(userId)` stores an API key id in Clerk
+  `privateMetadata` and fetches the secret from the agent backend.
+
+## The data layer (Drizzle over Postgres)
+
+ORM is Drizzle (`drizzle-orm` + `drizzle-kit`), Postgres via `DATABASE_URL`. The singleton
+is `app/db/index.ts` (`drizzle(process.env.DATABASE_URL!)`); schema in `app/db/schema.ts`;
+relations in `drizzle/relations.ts`; config in `drizzle.config.ts`.
+
+Core tables:
+
+| Table | Holds |
+| ----- | ----- |
+| `users` | id (Clerk id), `coder_userID` / `coder_email` / `coder_pass`, `linear_teamID`, `personal_projects[]`, `shared_projects[]` |
+| `projects` | id, name, owner, `shared_users[]`, `thread` (chat JSON), `github_repo_url`, `type` |
+| `code` | per-project repo / deployments / `coder_workspace` / prototypes / wiki (JSON) |
+| `tasks` | per-project agent task history (n8n) |
+| `chats` | per-project / per-user message log |
+| `platformBots` | Slack / Telegram / third-party bots with tokens and secrets |
+| `platformChannels` | channels linked to a bot (cascade delete) |
+| `temporaryChats` | inbound external-platform chat history, linked to channel + bot |
+| `linearAgentsTokens` | Linear OAuth access / refresh tokens |
+| `urlKnowledgebaseHook`, `projectUrls`, `brandDetails`, `projectFiles` | knowledge URLs, project URLs, brand info, file metadata |
+
+User onboarding (`lib/user-database.ts`): a new Clerk user gets a generated password, a
+Coder user created via `lib/coder-service.ts` (storing `coder_userID/email/pass`), a Linear
+team, and a row in `users`.
+
+> Local-mode note: in the Clerk-free universe mode these platform tables and backend
+> routes are largely dormant. Local projects are tracked under owner `"x"` and the
+> universe half (canvas, energy, time) does not depend on Postgres or the agent backend.
+
+## Environment variables
+
+Server-only secrets: `OPENAI_API_KEY`, `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET`,
+`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `LINEAR_API_KEY`, `CODER_ADMIN_TOKEN` /
+`CODER_ADMIN_EMAIL` / `CODER_ADMIN_PASSWORD`, `DATABASE_URL`, `AGENT_BACKEND_BASE_URL`,
+`BACKEND_BASE_URL`, `ELIZA_BACKEND_BASE_URL`, `BILLING_BASE_URL`, `N8N_URL`,
+`CLAUDE_CODE_WORKSPACE_DOMAIN`.
+
+Public (`NEXT_PUBLIC_*`): Clerk publishable key and sign-in/up URLs, `CODER_URL`,
+analytics keys, and the `DISABLE_AUTH` / `DISABLE_BILLING` dev bypasses.
