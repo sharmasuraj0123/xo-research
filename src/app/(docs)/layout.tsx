@@ -5,6 +5,7 @@ import {
   AISearchPanel,
   AISearchTrigger,
 } from "@/components/ai/search";
+import { VersionSwitcher } from "@/components/version-switcher";
 import { cn } from "@/lib/cn";
 import { baseOptions } from "@/lib/layout.shared";
 import { source } from "@/lib/source";
@@ -15,6 +16,7 @@ export default function Layout({ children }: LayoutProps<"/">) {
       sidebar={{
         enabled: true,
         prefetch: true,
+        banner: <VersionSwitcher />,
       }}
       tree={source.getPageTree()}
       {...baseOptions()}

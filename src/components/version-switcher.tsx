@@ -69,19 +69,8 @@ export function VersionSwitcher() {
     : null;
 
   return (
-    <div className="not-prose mb-6 inline-flex items-center gap-2 rounded-lg border border-fd-border bg-fd-card px-3 py-2 text-sm">
-      <span className="text-fd-muted-foreground">History</span>
-      <button
-        type="button"
-        onClick={() =>
-          canGoPrev &&
-          updateVersionInUrl(pathname, searchParams, router, commits[selectedIndex - 1].sha)
-        }
-        disabled={!canGoPrev || isLoading}
-        className="rounded-md border border-fd-border px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        Prev
-      </button>
+    <div className="not-prose mb-3 rounded-lg border border-fd-border bg-fd-card p-2 text-xs">
+      <div className="mb-1 font-medium text-fd-muted-foreground">History</div>
       <select
         aria-label="Select git version"
         value={selectedCommit?.sha ?? ""}
@@ -89,7 +78,7 @@ export function VersionSwitcher() {
           updateVersionInUrl(pathname, searchParams, router, event.target.value)
         }
         disabled={isLoading || commits.length === 0}
-        className="rounded-md border border-fd-border bg-fd-background px-2 py-1"
+        className="mb-1 w-full rounded-md border border-fd-border bg-fd-background px-2 py-1 text-xs"
       >
         {isLoading ? <option value="">Loading history...</option> : null}
         {!isLoading && commits.length === 0 ? <option value="">No commits found</option> : null}
@@ -99,23 +88,36 @@ export function VersionSwitcher() {
           </option>
         ))}
       </select>
-      <button
-        type="button"
-        onClick={() =>
-          canGoNext &&
-          updateVersionInUrl(pathname, searchParams, router, commits[selectedIndex + 1].sha)
-        }
-        disabled={!canGoNext || isLoading}
-        className="rounded-md border border-fd-border px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        Next
-      </button>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() =>
+            canGoPrev &&
+            updateVersionInUrl(pathname, searchParams, router, commits[selectedIndex - 1].sha)
+          }
+          disabled={!canGoPrev || isLoading}
+          className="rounded-md border border-fd-border px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Prev
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            canGoNext &&
+            updateVersionInUrl(pathname, searchParams, router, commits[selectedIndex + 1].sha)
+          }
+          disabled={!canGoNext || isLoading}
+          className="rounded-md border border-fd-border px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Next
+        </button>
+      </div>
       {selectedCommit ? (
         <a
           href={commitUrl ?? "#"}
           target="_blank"
           rel="noreferrer"
-          className="rounded-md border border-fd-border px-2 py-1 text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-accent-foreground"
+          className="mt-1 block truncate rounded-md border border-fd-border px-2 py-1 text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-accent-foreground"
         >
           {selectedCommit.author} {selectedCommit.date}
         </a>
