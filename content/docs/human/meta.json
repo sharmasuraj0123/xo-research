@@ -1,5 +1,5 @@
 {
   "title": "Human",
   "icon": "BookOpen",
-  "pages": ["agent-harness", "xo-swarm", "claude-code"]
+  "pages": ["agent-harness", "xo-swarm", "claude-code", "xo-cowork"]
 }
